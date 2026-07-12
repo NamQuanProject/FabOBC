@@ -7,6 +7,13 @@ each with its own **MCP tool server**, fronted by a FastAPI gateway — but buil
 **Google ADK + Gemini** (per the proposal's stated architecture) instead of
 `beeai_framework`.
 
+There is no self-hosted database and the backend never opens a direct
+Postgres connection — all relational data (users, OPC profiles, KPIs, tasks,
+chat) is read/written through **Supabase's REST API** (`database/client.py`),
+the same way you'd use the Supabase client for storage or auth. You manage
+the actual Postgres tables yourself in the Supabase SQL Editor / Table
+Editor — the backend only ever talks HTTPS to Supabase, never raw Postgres.
+
 **Status:** structural scaffold. Routing, persistence, and the A2A/MCP plumbing
 are real; every MCP tool body is a typed stub that raises `NotImplementedTool`
 (see `mcp_servers/shared/stub.py`) describing what it should do. Implement a
@@ -15,13 +22,12 @@ tool by replacing its `raise not_implemented(...)` line — signatures don't cha
 ## Project Shape
 
 ```text
-app/            FastAPI routes, schemas, services, DB bootstrap (the gateway)
+app/            FastAPI routes, schemas, services (the gateway)
 core/           OPC Profile Object, agent registry/ports, personas, settings
 agents/         One Google ADK LlmAgent + A2A server per agent (orchestrator + 6 depts)
 mcp_servers/    One MCP tool server per agent domain (stub tool bodies)
-database/       Supabase client helper
-sql/            Postgres schema bootstrap
-scripts/        Demo data seeding
+database/       Async Supabase client — the backend's only data access path
+sql/            Schema + sample data, run directly in the Supabase SQL Editor
 ```
 
 The seven agents: **Orion** (Orchestrator/CEO), **Atlas** (Finance), **Nova**
@@ -30,58 +36,40 @@ The seven agents: **Orion** (Orchestrator/CEO), **Atlas** (Finance), **Nova**
 
 ## Setup
 
-There is no self-hosted database — Supabase's own Postgres instance is
-the database. Nothing else to stand up locally.
-
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Fill in `.env` from your Supabase project (Project Settings -> Database for
-`DATABASE_URL`, Project Settings -> API for `SUPABASE_URL`/`SUPABASE_KEY`):
+Fill in `.env` from your Supabase project (Project Settings -> API):
 
 ```env
-DATABASE_URL=postgresql+asyncpg://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
 SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_KEY=<anon-or-publishable-key>
+SUPABASE_KEY=<service-role-secret-key>
 ```
 
-If the direct `db.<project-ref>.supabase.co` host doesn't connect from your
-network (it's IPv6; some networks can't reach it), copy the **Session
-pooler** connection string from that same Database settings page instead —
-it's IPv4 and drops in as `DATABASE_URL` unchanged.
+Use the **service_role** secret, not the anon/publishable key — the backend
+is a trusted server context and should read/write freely regardless of any
+Row Level Security policies you add later. (If you only have the anon key
+handy, it'll still work today since the schema below ships with RLS off —
+just don't rely on that for anything beyond local dev.)
 
-Create the schema, either by starting the app once (`app.db.init_db()` runs
-`create_all` on startup) or directly:
+### Create the schema and sample data
 
-```bash
-psql "$DATABASE_URL" -f sql/init_postgresql.sql
-# or paste sql/init_postgresql.sql into the Supabase SQL Editor
-```
+You manage the database yourself in the Supabase dashboard — the backend
+never runs DDL. Open the **SQL Editor** for your project and run, in order:
 
-### Sample data (test the UI before touching agents)
+1. `sql/init_postgresql.sql` — creates the tables.
+2. `sql/seed_sample_data.sql` — one demo company, its 7 users, and
+   KPIs/tasks/knowledge sources for every department: everything the
+   frontend needs to render fully without any agent process running.
+   Idempotent — re-run any time to reset the demo data.
 
-`sql/seed_sample_data.sql` populates one demo company, its 7 users, and
-KPIs/tasks/knowledge sources for every department — everything the frontend
-needs to render fully without any agent process running. Run it the same way:
-
-```bash
-psql "$DATABASE_URL" -f sql/seed_sample_data.sql
-# or paste it into the Supabase SQL Editor
-```
-
-It's idempotent (deletes and re-inserts the demo company each time), so
-re-run it any time you want to reset the demo data. At this point
-`uvicorn app.main:app --reload` + the frontend (`../frontend`) is enough to
-click through login, dashboards, team overview, and business profile with
-real data — chat will reply that its agent isn't implemented yet until you
-also start the agent processes below.
-
-`scripts/seed_demo_workspace.py` is a Python-side equivalent that only seeds
-the company + users (no KPIs/tasks) — useful if you want to seed
-programmatically rather than via SQL.
+At this point `uvicorn app.main:app --reload` + the frontend (`../frontend`)
+is enough to click through login, dashboards, team overview, and business
+profile with real data — chat will reply that its agent isn't implemented
+yet until you also start the agent processes below.
 
 ## Running
 

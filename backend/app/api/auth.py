@@ -5,22 +5,22 @@ Swap for real auth (Supabase Auth, SSO) before any non-demo deployment.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import AsyncClient
 
-from app.db import get_session
-from app.models import User
+from app.deps import get_supabase
 from app.schema.user import LoginRequest, LoginResponse, UserOut
+from app.tables import USERS
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
-    payload: LoginRequest, session: AsyncSession = Depends(get_session)
+    payload: LoginRequest, client: AsyncClient = Depends(get_supabase)
 ) -> LoginResponse:
-    result = await session.execute(select(User).where(User.id == payload.user_id))
-    user = result.scalar_one_or_none()
-    if user is None:
+    result = (
+        await client.table(USERS).select("*").eq("id", payload.user_id).maybe_single().execute()
+    )
+    if result is None or result.data is None:
         raise HTTPException(status_code=404, detail="Unknown user_id")
-    return LoginResponse(user=UserOut.model_validate(user))
+    return LoginResponse(user=UserOut(**result.data))

@@ -1,25 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import AsyncClient
 
-from app.db import get_session
-from app.models import User
+from app.deps import get_supabase
 from app.schema.user import UserOut
+from app.tables import USERS
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
 
 @router.get("", response_model=list[UserOut])
-async def list_users(session: AsyncSession = Depends(get_session)) -> list[UserOut]:
+async def list_users(client: AsyncClient = Depends(get_supabase)) -> list[UserOut]:
     """List every user — powers the frontend's login screen account picker."""
-    result = await session.execute(select(User))
-    return [UserOut.model_validate(u) for u in result.scalars().all()]
+    result = await client.table(USERS).select("*").execute()
+    return [UserOut(**row) for row in result.data]
 
 
 @router.get("/{user_id}", response_model=UserOut)
-async def get_user(user_id: str, session: AsyncSession = Depends(get_session)) -> UserOut:
-    result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if user is None:
+async def get_user(user_id: str, client: AsyncClient = Depends(get_supabase)) -> UserOut:
+    result = await client.table(USERS).select("*").eq("id", user_id).maybe_single().execute()
+    if result is None or result.data is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return UserOut.model_validate(user)
+    return UserOut(**result.data)

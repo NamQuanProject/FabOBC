@@ -13,8 +13,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # --- Supabase / Postgres -------------------------------------------------
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/fabopc"
+    # --- Supabase ---------------------------------------------------------
+    # No self-hosted database, no direct Postgres connection: the backend
+    # reaches Supabase over its REST API (see database/client.py).
+    # SUPABASE_KEY should be the service_role secret for backend use.
     supabase_url: str | None = None
     supabase_key: str | None = None
 

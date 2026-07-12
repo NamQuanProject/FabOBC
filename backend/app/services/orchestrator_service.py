@@ -2,34 +2,36 @@
 
 Structure only for the agent-call path (depends on the not-yet-implemented
 MCP tool bodies), but the persistence path (saving both sides of the
-conversation) is fully wired so the frontend chat UI has something real to
-render even before agent tool logic is implemented — see
-app/api/chat.py.
+conversation, via the Supabase client) is fully wired so the frontend chat
+UI has something real to render even before agent tool logic is
+implemented — see app/api/chat.py.
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 
-from app.models import ChatMessage
+from supabase import AsyncClient
+
 from app.services.a2a_client import send_message_to_agent
+from app.tables import CHAT_MESSAGES
 
 
 async def handle_chat_turn(
-    session: AsyncSession,
+    client: AsyncClient,
     company_id: str,
     user_id: str,
     department: str,
     message: str,
-) -> ChatMessage:
-    """Persist the user's message, call the department's agent, persist + return the reply."""
-    user_message = ChatMessage(
-        company_id=company_id,
-        user_id=user_id,
-        department=department,
-        sender="user",
-        content=message,
-    )
-    session.add(user_message)
-    await session.flush()
+) -> dict[str, Any]:
+    """Persist the user's message, call the department's agent, persist + return the reply row."""
+    await client.table(CHAT_MESSAGES).insert(
+        {
+            "company_id": company_id,
+            "user_id": user_id,
+            "department": department,
+            "sender": "user",
+            "content": message,
+        }
+    ).execute()
 
     try:
         reply_text = await send_message_to_agent(department, message)
@@ -39,14 +41,17 @@ async def handle_chat_turn(
             f"for real. (internal: {exc})"
         )
 
-    agent_message = ChatMessage(
-        company_id=company_id,
-        user_id=user_id,
-        department=department,
-        sender="agent",
-        content=reply_text,
+    result = (
+        await client.table(CHAT_MESSAGES)
+        .insert(
+            {
+                "company_id": company_id,
+                "user_id": user_id,
+                "department": department,
+                "sender": "agent",
+                "content": reply_text,
+            }
+        )
+        .execute()
     )
-    session.add(agent_message)
-    await session.commit()
-    await session.refresh(agent_message)
-    return agent_message
+    return result.data[0]

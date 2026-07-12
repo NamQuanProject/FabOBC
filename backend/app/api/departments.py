@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import AsyncClient
 
-from app.db import get_session
-from app.models import Company, DepartmentKPI, DepartmentTask, KnowledgeSource
+from app.deps import get_supabase
 from app.schema.department import (
     BusinessProfileOut,
     DepartmentDashboard,
@@ -11,6 +9,7 @@ from app.schema.department import (
     KpiOut,
     TaskOut,
 )
+from app.tables import COMPANIES, DEPARTMENT_KPIS, DEPARTMENT_TASKS, KNOWLEDGE_SOURCES
 from core.personas import PERSONAS
 
 router = APIRouter(prefix="/api/v1", tags=["departments"])
@@ -18,7 +17,7 @@ router = APIRouter(prefix="/api/v1", tags=["departments"])
 
 @router.get("/companies/{company_id}/departments/{department}", response_model=DepartmentDashboard)
 async def get_department_dashboard(
-    company_id: str, department: str, session: AsyncSession = Depends(get_session)
+    company_id: str, department: str, client: AsyncClient = Depends(get_supabase)
 ) -> DepartmentDashboard:
     """KPIs + active tasks for one department, plus its agent persona/insight.
 
@@ -30,15 +29,20 @@ async def get_department_dashboard(
     if persona is None:
         raise HTTPException(status_code=404, detail="Unknown department")
 
-    kpi_result = await session.execute(
-        select(DepartmentKPI).where(
-            DepartmentKPI.company_id == company_id, DepartmentKPI.department == department
-        )
+    kpi_result = (
+        await client.table(DEPARTMENT_KPIS)
+        .select("*")
+        .eq("company_id", company_id)
+        .eq("department", department)
+        .execute()
     )
-    task_result = await session.execute(
-        select(DepartmentTask).where(
-            DepartmentTask.company_id == company_id, DepartmentTask.department == department
-        )
+    task_result = (
+        await client.table(DEPARTMENT_TASKS)
+        .select("*")
+        .eq("company_id", company_id)
+        .eq("department", department)
+        .order("created_at")
+        .execute()
     )
 
     return DepartmentDashboard(
@@ -46,33 +50,33 @@ async def get_department_dashboard(
         agent_persona=persona.name,
         agent_role_title=persona.role_title,
         insight=persona.welcome_line,
-        kpis=[KpiOut.model_validate(k) for k in kpi_result.scalars().all()],
-        tasks=[TaskOut.model_validate(t) for t in task_result.scalars().all()],
+        kpis=[KpiOut(**row) for row in kpi_result.data],
+        tasks=[TaskOut(**row) for row in task_result.data],
     )
 
 
 @router.get("/companies/{company_id}/business-profile", response_model=BusinessProfileOut)
 async def get_business_profile(
-    company_id: str, session: AsyncSession = Depends(get_session)
+    company_id: str, client: AsyncClient = Depends(get_supabase)
 ) -> BusinessProfileOut:
-    result = await session.execute(select(Company).where(Company.id == company_id))
-    company = result.scalar_one_or_none()
-    if company is None:
+    company_result = (
+        await client.table(COMPANIES).select("*").eq("id", company_id).maybe_single().execute()
+    )
+    if company_result is None or company_result.data is None:
         raise HTTPException(status_code=404, detail="Company not found")
+    company = company_result.data
 
-    sources_result = await session.execute(
-        select(KnowledgeSource).where(KnowledgeSource.company_id == company_id)
+    sources_result = (
+        await client.table(KNOWLEDGE_SOURCES).select("*").eq("company_id", company_id).execute()
     )
 
     return BusinessProfileOut(
-        company_id=company.id,
-        legal_name=company.legal_name,
-        industry=company.industry,
-        tax_id=company.tax_id,
-        employee_count=company.employee_count,
-        annual_revenue_vnd=company.annual_revenue_vnd,
-        digital_maturity_level=company.digital_maturity_level,
-        knowledge_sources=[
-            KnowledgeSourceOut.model_validate(s) for s in sources_result.scalars().all()
-        ],
+        company_id=company["id"],
+        legal_name=company["legal_name"],
+        industry=company.get("industry"),
+        tax_id=company.get("tax_id"),
+        employee_count=company.get("employee_count"),
+        annual_revenue_vnd=company.get("annual_revenue_vnd"),
+        digital_maturity_level=company.get("digital_maturity_level"),
+        knowledge_sources=[KnowledgeSourceOut(**row) for row in sources_result.data],
     )

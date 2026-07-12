@@ -41,7 +41,7 @@ InsightForge_temp/ Earlier project used as an architectural reference (A2A serve
                      │                    │                     │
                      └────────────────────┴─────────────────────┘
                                            │
-                                Supabase Postgres
+                              Supabase REST API
                         (OPC Profile Object, users, KPIs, chat)
 ```
 
@@ -54,27 +54,33 @@ InsightForge_temp/ Earlier project used as an architectural reference (A2A serve
   stubs — signatures, types, and docstrings are real; the business logic
   isn't implemented yet (see `backend/mcp_servers/shared/stub.py`).
 - **Shared state**: the OPC Profile Object (`backend/core/opc_profile.py`)
-  is persisted as JSONB in Supabase Postgres and is what lets agents
-  coordinate without duplicating queries.
+  is persisted as JSONB in Supabase. The backend has no self-hosted database
+  and never opens a direct Postgres connection — it reaches Supabase over
+  its REST API (`backend/database/client.py`), the same as you'd use the
+  Supabase client for storage or auth. Tables/sample data are managed
+  directly in the Supabase SQL Editor, not via backend migrations.
 - **Frontend**: a fully working Next.js app (login, department dashboards,
   team overview, business profile, per-agent chat) — no canned data, every
   screen calls the FastAPI gateway.
 
 ## Quickstart
 
-There's no self-hosted database to run — Supabase's own Postgres instance
-is the database, nothing else to stand up locally.
+There's no self-hosted database and the backend never opens a direct
+Postgres connection — it talks to Supabase over its REST API, and you
+manage tables/data yourself in the Supabase SQL Editor.
 
-**Test the UI first, no agents needed** (from `backend/`):
+**Test the UI first, no agents needed:**
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # fill in DATABASE_URL/SUPABASE_URL/SUPABASE_KEY from your Supabase project
-psql "$DATABASE_URL" -f sql/init_postgresql.sql   # or paste into the Supabase SQL Editor
-psql "$DATABASE_URL" -f sql/seed_sample_data.sql  # sample company/users/KPIs/tasks
-uvicorn app.main:app --reload   # http://127.0.0.1:8000/docs
-```
+1. In your Supabase project's **SQL Editor**, run `backend/sql/init_postgresql.sql`
+   then `backend/sql/seed_sample_data.sql` (sample company/users/KPIs/tasks).
+2. From `backend/`:
+
+   ```bash
+   python -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   cp .env.example .env   # fill in SUPABASE_URL/SUPABASE_KEY (service_role) from your project
+   uvicorn app.main:app --reload   # http://127.0.0.1:8000/docs
+   ```
 
 Then (from `frontend/`):
 
@@ -110,6 +116,9 @@ Structural scaffold, not a finished product:
 - ✅ Frontend is fully implemented and wired to real API calls.
 - ✅ Routing/orchestration plumbing (FastAPI ⇄ A2A ⇄ agents ⇄ MCP) is real
   and verified to import/build cleanly.
+- ✅ The Supabase data layer is verified end-to-end against a live project
+  (FastAPI ⇄ Supabase REST) — the only thing standing between you and a
+  working login/dashboard is running the two SQL scripts once.
 - ⏳ MCP tool bodies (the actual business logic — VAT calculation, churn
   detection, inventory health, etc.) are typed stubs. Implement one by
   replacing its `raise not_implemented(...)` line; the signature doesn't

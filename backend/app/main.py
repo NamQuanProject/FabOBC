@@ -8,7 +8,6 @@ from app.api.departments import router as departments_router
 from app.api.health import router as health_router
 from app.api.opc_profile import router as opc_profile_router
 from app.api.users import router as users_router
-from app.db import init_db
 from core.config import get_settings
 
 app = FastAPI(
@@ -17,7 +16,10 @@ app = FastAPI(
         "Gateway for FabOPC's private multi-agent AI management layer. "
         "Talks to the Orchestrator + department agents over A2A "
         "(see app/services/a2a_client.py) and persists shared state in "
-        "Postgres/Supabase (see app/db.py, core/opc_profile.py)."
+        "Supabase, reached over its REST API rather than a direct Postgres "
+        "connection (see database/client.py, core/opc_profile.py). Tables "
+        "are created and seeded directly in the Supabase SQL Editor — see "
+        "sql/init_postgresql.sql and sql/seed_sample_data.sql."
     ),
     version="0.1.0",
 )
@@ -31,11 +33,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    await init_db()
 
 
 app.include_router(health_router)

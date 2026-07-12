@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import AsyncClient
 
-from app.db import get_session
-from app.models import ChatMessage
+from app.deps import get_supabase
 from app.schema.chat import ChatMessageOut, ChatRequest, ChatResponse
 from app.services.orchestrator_service import handle_chat_turn
+from app.tables import CHAT_MESSAGES
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
 
@@ -15,30 +14,33 @@ router = APIRouter(prefix="/api/v1", tags=["chat"])
     response_model=list[ChatMessageOut],
 )
 async def get_chat_history(
-    company_id: str, department: str, session: AsyncSession = Depends(get_session)
+    company_id: str, department: str, client: AsyncClient = Depends(get_supabase)
 ) -> list[ChatMessageOut]:
-    result = await session.execute(
-        select(ChatMessage)
-        .where(ChatMessage.company_id == company_id, ChatMessage.department == department)
-        .order_by(ChatMessage.created_at.asc())
+    result = (
+        await client.table(CHAT_MESSAGES)
+        .select("*")
+        .eq("company_id", company_id)
+        .eq("department", department)
+        .order("created_at")
+        .execute()
     )
-    return [ChatMessageOut.model_validate(m) for m in result.scalars().all()]
+    return [ChatMessageOut(**row) for row in result.data]
 
 
 @router.post("/agents/orchestrate", response_model=ChatResponse)
 async def orchestrate_chat(
-    payload: ChatRequest, session: AsyncSession = Depends(get_session)
+    payload: ChatRequest, client: AsyncClient = Depends(get_supabase)
 ) -> ChatResponse:
     """Send a chat message to a department's agent (or Orion for 'executive').
 
     Delegates to app.services.orchestrator_service.handle_chat_turn, which
     persists both sides of the conversation and calls the agent over A2A.
     """
-    reply = await handle_chat_turn(
-        session=session,
+    reply_row = await handle_chat_turn(
+        client=client,
         company_id=payload.company_id,
         user_id=payload.user_id,
         department=payload.department,
         message=payload.message,
     )
-    return ChatResponse(department=payload.department, reply=ChatMessageOut.model_validate(reply))
+    return ChatResponse(department=payload.department, reply=ChatMessageOut(**reply_row))
