@@ -62,18 +62,34 @@ InsightForge_temp/ Earlier project used as an architectural reference (A2A serve
 
 ## Quickstart
 
-**Backend** (from `backend/`):
+There's no self-hosted database to run — Supabase's own Postgres instance
+is the database, nothing else to stand up locally.
+
+**Test the UI first, no agents needed** (from `backend/`):
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in DATABASE_URL (Supabase), GOOGLE_API_KEY
-psql "postgresql://USER:PASSWORD@HOST:PORT/DB?sslmode=require" -f sql/init_postgresql.sql
-python -m scripts.seed_demo_workspace
-
+cp .env.example .env   # fill in DATABASE_URL/SUPABASE_URL/SUPABASE_KEY from your Supabase project
+psql "$DATABASE_URL" -f sql/init_postgresql.sql   # or paste into the Supabase SQL Editor
+psql "$DATABASE_URL" -f sql/seed_sample_data.sql  # sample company/users/KPIs/tasks
 uvicorn app.main:app --reload   # http://127.0.0.1:8000/docs
+```
 
-# in separate terminals, start the agent A2A servers (orchestrator last):
+Then (from `frontend/`):
+
+```bash
+npm install
+cp .env.local.example .env.local   # defaults to http://127.0.0.1:8000
+npm run dev                        # http://localhost:3000
+```
+
+You can now log in and click through dashboards, team overview, and business
+profile with real seeded data. Chat will reply that its agent isn't
+implemented yet until you also start the agent processes:
+
+```bash
+# in separate terminals, from backend/ (orchestrator last):
 python -m agents.finance_agent.main
 python -m agents.marketing_agent.main
 python -m agents.operations_agent.main
@@ -81,14 +97,6 @@ python -m agents.hr_agent.main
 python -m agents.compliance_agent.main
 python -m agents.bi_agent.main
 python -m agents.orchestrator_agent.main
-```
-
-**Frontend** (from `frontend/`):
-
-```bash
-npm install
-cp .env.local.example .env.local   # defaults to http://127.0.0.1:8000
-npm run dev                        # http://localhost:3000
 ```
 
 Full details, environment variables, and troubleshooting are in

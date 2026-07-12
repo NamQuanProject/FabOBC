@@ -30,23 +30,58 @@ The seven agents: **Orion** (Orchestrator/CEO), **Atlas** (Finance), **Nova**
 
 ## Setup
 
+There is no self-hosted database — Supabase's own Postgres instance is
+the database. Nothing else to stand up locally.
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in DATABASE_URL (Supabase), GOOGLE_API_KEY
+cp .env.example .env
 ```
 
-Bootstrap the schema against your Supabase Postgres instance:
+Fill in `.env` from your Supabase project (Project Settings -> Database for
+`DATABASE_URL`, Project Settings -> API for `SUPABASE_URL`/`SUPABASE_KEY`):
+
+```env
+DATABASE_URL=postgresql+asyncpg://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_KEY=<anon-or-publishable-key>
+```
+
+If the direct `db.<project-ref>.supabase.co` host doesn't connect from your
+network (it's IPv6; some networks can't reach it), copy the **Session
+pooler** connection string from that same Database settings page instead —
+it's IPv4 and drops in as `DATABASE_URL` unchanged.
+
+Create the schema, either by starting the app once (`app.db.init_db()` runs
+`create_all` on startup) or directly:
 
 ```bash
-psql "postgresql://USER:PASSWORD@HOST:PORT/DB?sslmode=require" -f sql/init_postgresql.sql
+psql "$DATABASE_URL" -f sql/init_postgresql.sql
+# or paste sql/init_postgresql.sql into the Supabase SQL Editor
 ```
 
-Seed the demo workspace (company + 7 users matching the frontend login screen):
+### Sample data (test the UI before touching agents)
+
+`sql/seed_sample_data.sql` populates one demo company, its 7 users, and
+KPIs/tasks/knowledge sources for every department — everything the frontend
+needs to render fully without any agent process running. Run it the same way:
 
 ```bash
-python -m scripts.seed_demo_workspace
+psql "$DATABASE_URL" -f sql/seed_sample_data.sql
+# or paste it into the Supabase SQL Editor
 ```
+
+It's idempotent (deletes and re-inserts the demo company each time), so
+re-run it any time you want to reset the demo data. At this point
+`uvicorn app.main:app --reload` + the frontend (`../frontend`) is enough to
+click through login, dashboards, team overview, and business profile with
+real data — chat will reply that its agent isn't implemented yet until you
+also start the agent processes below.
+
+`scripts/seed_demo_workspace.py` is a Python-side equivalent that only seeds
+the company + users (no KPIs/tasks) — useful if you want to seed
+programmatically rather than via SQL.
 
 ## Running
 

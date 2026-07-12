@@ -1,7 +1,10 @@
--- FabOPC schema bootstrap for Supabase/Postgres.
--- Mirrors backend/app/models.py. Run manually with:
---   psql "postgresql://USER:PASSWORD@HOST:PORT/DB?sslmode=require" -f sql/init_postgresql.sql
+-- FabOPC schema bootstrap. There is no self-hosted database — this runs
+-- directly against the project's Supabase Postgres instance. Mirrors
+-- backend/app/models.py. Run manually with:
+--   psql "postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres" -f sql/init_postgresql.sql
+-- or paste it into the Supabase SQL Editor.
 -- (app.db.init_db() also creates these automatically via SQLAlchemy on startup.)
+-- After this, run sql/seed_sample_data.sql for sample data to test the UI with.
 
 create extension if not exists "uuid-ossp";
 
